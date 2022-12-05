@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    <link rel="stylesheet" href="https://unpkg.com/mvp.css">
+    <title>Test Module</title>
+    <style>
+        #roomIdInput {
+            padding: 10px; width: 200px; margin: 5px;
+            border: 2px darkslategray solid;
+            border-radius: 10px;
+        }
+
+        #videoBox{display:inline-grid;grid-template-columns:repeat(auto-fill,minmax(100%,auto))}
+        #videoBox video { width: 100%; }
+
+        .screenShare {
+            width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <button class="screenShareStart" disabled>화면 공유 시작</button>
+    <button class="screenShareStop" disabled>화면 공유 중지</button>
+    <video class="video" autoplay></video>
+    <div>
+        <h3>현재 방</h3>
+        <input type="text" name="roomIdInput" id="roomIdInput" placeholder="room id"/>
+        <button id="createVideoRoomBtn" disabled>CreateVideoRoom</button>
+        <button id="joinRoomBtn" disabled>JoinRoom</button>
+        <button id="leaveRoomBtn" disabled>LeaveRoom</button>
+        <button id="destroyRoomBtn" disabled>방 파괴</button>
+    </div>
+    <div class="wrapper">
+        <div class="user-container">닉네임 :</div>
+        <div class="display-container">
+            <ul class="chatting-list">
+            </ul>
+        </div>
+        <div class="input-container">
+            입력<input type="text" class="chatting-input" />
+            <button class="send-button">전송</button>
+        </div>
+    </div>
+    <div id="videoBox"></div>
+
+    <div id="printBox"></div>
+
+    <script type="text/javascript" src="https://dev.knowledgetalk.co.kr:7102/knowledgetalk.min.js"></script>    
+    <script>
+        const currentRoom = document.querySelector("h3");
+        const title = document.querySelector(".user-container");
+        const nickname = document.querySelector('#nickname');
+        const chatList = document.querySelector('.chatting-list');
+        const chatInput = document.querySelector('.chatting-input');
+        const sendButton = document.querySelector('.send-button');
+        const screenShareStartBtn = document.querySelector(".screenShareStart");
+        const screenShareStopBtn = document.querySelector(".screenShareStop");
+        const createVideoRoomBtn = document.getElementById('createVideoRoomBtn');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const leaveRoomBtn = document.querySelector("#leaveRoomBtn");
+        const destroyRoomBtn = document.querySelector("#destroyRoomBtn");
+        const roomIdInput = document.getElementById('roomIdInput');
+        const publishBtn = document.getElementById('publishBtn');
+        const videoBox = document.getElementById('videoBox');        
+        const printBox = document.getElementById("printBox");
+
+        const knowledgetalk = new Knowledgetalk();
+
+        let cpCode = "KP-20200101-01";
+        let authKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoi64Kg66as7KeA7Y-s7J247Yq4IiwibWF4VXNlciI6IjUwMDAwMDAwIiwic3RhcnREYXRlIjoiMjAyMC0wMS0wMVQwNjo0NzowMC4wMDBaIiwiZW5kRGF0ZSI6IjIwMzAtMTItMzFUMDY6NDc6MDAuMDAwWiIsImF1dGhDb2RlIjoiS1AtMjAyMDAxMDEtMDEiLCJjb21wYW55Q29kZSI6IkxJQy0wMSIsImlhdCI6MTU4NzUzODExNH0.73A0UiiMHJeIS8pIgoN4DfEWT4QCsMnXkO4uUdnfbYI";
+
+        const roomOwner = "host";
+        const roomGuest = "guest";
+        const responseSuccessCode = "200";
+        const sendVideoType = "cam";
+        const sendScreenShareType = "screen";
+        const mediaViewSize = {
+            video: {
+                width: 100,
+                height: 100,
+            },
+            audio: false,
+        };
+        const presenceEventType = {
+            join: "join",
+            leave: "leave",
+            publish: "publish",
+            chat: "chat",
+            screen: "screen",
+            shareStop: "shareStop",
+            };
+
+        let userId = null;
+        let roomId = null;
+        let members = {};
+
+        sendButton.disabled = true;
+
+        // IIFE Initialize
+        (async function init() {
+            try {
+                const initResult = await knowledgetalk.init(cpCode, authKey);
+                const initResultCode = initResult.code;
+                const initResultUserId = initResult.userId;
+
+                if (initResultCode !== responseSuccessCode || initResultUserId.length < 8) errorHandler("초기화 실패");
+
+                createVideoRoomBtn.disabled = false;
+                joinRoomBtn.disabled = false;
+            } catch (err) {
+                console.log(err);
+                return alert(err);
+            }
+        })();
+
+        // 방 생성
+        async function createVideoRoom() {
+            try {
+                const createResult = await knowledgetalk.createVideoRoom();
+                const createResultCode = createResult.code;
+                const createResultRoomId = createResult.roomId;
+
+                if (createResultCode !== responseSuccessCode || createResultRoomId.length < 8) errorHandler("룸 생성 실패");
+
+                roomIdInput.value = createResultRoomId;
+                createVideoRoomBtn.disabled = true;
+            } catch (err) {
+                console.log(err);
+                return alert(err);
+            }
+        };
+
+        // 방 입장
+        async function joinRoom() {
+            try {
+                createVideoRoomBtn.disabled = true;
+                joinRoomBtn.disabled = true;
+                sendButton.disabled = false;
+                leaveRoomBtn.disabled = false;
+                screenShareStartBtn.disabled = false;
+
+                roomId = roomIdInput.value;
+                userId = knowledgetalk.getUserId();
+
+                title.innerHTML = `내 아이디 ${userId}`;
+                currentRoom.innerText = `현재 방: ${roomId}`;
+
+                const joinResult = await knowledgetalk.joinRoom(roomId);
+                const joinResultCode = joinResult.code;
+
+                if (joinResultCode !== responseSuccessCode) errorHandler("룸 입장 실패");
+
+                members = joinResult.members;
+
+            
+                // 방장일 경우 방 삭제 버튼 활성화
+                // Object
+                //     .entries(members)
+                //     .flat(1)
+                //     .filter(e => {
+                //         if (e.userType === "host" && e.id === userId) {
+                //             destroyRoomBtn.disabled = false;
+                //         }   
+                //     });
+                Object
+                    .entries(members)
+                    .forEach(([memberId, memberInfo]) => {
+                        if (memberInfo.userType === roomOwner && memberId === userId) {
+                            destroyRoomBtn.disabled = false;
+                        }
+                    });
+                
+                for (const member of Object.keys(members)) {
+                    if (member !== userId) createVideoBox(member);
+                }
+
+                const localStream = await navigator.mediaDevices.getUserMedia(mediaViewSize);
+
+                createVideoBox(userId);
+
+                document.getElementById(`multiVideo-${userId}`).srcObject = localStream;
+
+                // 송출
+                const VideoPublishResult = await knowledgetalk.publishVideo(sendVideoType, localStream);
+
+                if (VideoPublishResult !== true) errorHandler("미디어 서버 송출 실패");
+            } catch (err) {
+                console.error(err);
+                return alert(err);
+            }
+        }
+
+        // 방 퇴장
+        async function leaveRoom() {
+            await knowledgetalk.leaveRoom(roomId);
+
+            return window.location = "/";
+        }
+
+        // 방 삭제
+        async function destroyRoom() {
+            await knowledgetalk.destroyRoom(roomId);
+
+            return window.location = "/";
+        }
+
+        // 비디오 박스 생성
+        function createVideoBox(id) {
+            let videoContainer = document.createElement('div');
+            videoContainer.classList = 'multiVideo';
+            videoContainer.id = id;
+
+            let videoLabel = document.createElement("p");
+            let videoLabelText = document.createTextNode(id);
+            videoLabel.appendChild(videoLabelText);
+
+            videoContainer.appendChild(videoLabel);
+
+            let multiVideo = document.createElement('video');
+            multiVideo.autoplay = true;
+            multiVideo.playsInline = true;
+            multiVideo.id = 'multiVideo-' + id;
+            videoContainer.appendChild(multiVideo);
+
+            videoBox.appendChild(videoContainer);
+        }
+
+        // 비디오 박스 제거
+        function removeVideoBox(id) {
+            let child = document.getElementById(id);
+            videoBox.removeChild(child);
+        }
+
+        // 메세지 전송
+        async function sendMessage() {
+            const message = chatInput.value;
+
+            const li = document.createElement("li");
+            li.innerText = `나: ${message}`;
+            chatList.appendChild(li);
+
+            return await knowledgetalk.chat(message, roomId);
+        }
+    
+        // 미디어 서버 영상 수신
+        async function subscribeVideo(id, type) {
+            return await knowledgetalk.subscribeVideo(id, type); 
+        }
+
+        // 화면 공유 시작
+        async function screenShareStart() {
+            screenShareStartBtn.disabled = true;
+            screenShareStopBtn.disabled = false;
+
+            try {
+                /** @type {MediaStream} */
+                const screenShareStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        cursor: "always",
+                    },
+                    audio: false,
+                });
+
+                // 스트림 비디오 트랙 정보 추출(onended)
+                screenShareStream.getVideoTracks().forEach(track => {
+                    // console.log(track);
+                    track.onended = () => {
+                        screenShareStop();
+                    };
+                });
+
+                document.getElementById(`multiVideo-${userId}`).srcObject = screenShareStream;
+
+                // 송출, 미디어 서버로 영상 송신
+                const screenShareStartResult = await knowledgetalk.screenStart(screenShareStream);  
+                const screenShareStartResultCode = screenShareStartResult.code; 
+                
+                if (screenShareStartResultCode !== responseSuccessCode) errorHandler("화면 공유 시작 실패");
+            } catch (err) {
+                console.error(err);
+                return alert(err);
+            } 
+        }
+
+        // 화면 공유 중지
+        async function screenShareStop() {
+            try {
+                await knowledgetalk.shareStop();
+
+                const screenShareStream = await navigator.mediaDevices.getUserMedia(mediaViewSize);
+                const screenShareStreamResult = screenShareStream.active;
+                
+                if (screenShareStream !== true) errorHandler("화면 공유 중지 실패");
+
+                document.getElementById(`multiVideo-${userId}`).srcObject = screenShareStream;
+            } catch (err) {
+                console.log(err);
+                return alert(err);
+            }
+        }
+
+        // 리스너
+        async function presence(e) {
+            try {
+                const listenerResult = e.detail;
+                const type = listenerResult.type;
+
+                switch (type) {
+                    case presenceEventType.shareStop: {
+                        const targetId = listenerResult.user;
+                        
+                        const stream = await subscribeVideo(targetId, sendVideoType);
+
+                        if (stream.active === true) {
+                            document.getElementById(`multiVideo-${targetId}`).srcObject = stream;
+                        }
+                        
+                        break;
+                    }
+                    case presenceEventType.screen: {
+                        break;
+                    }
+                    case presenceEventType.chat: {
+                        const message = listenerResult.message;
+                        const targetId = listenerResult.user;
+
+                        const li = document.createElement("li");
+                        li.innerText = `${targetId}: ${message}`;
+                        chatList.appendChild(li);
+
+                        break;
+                    }
+                    case presenceEventType.join: {
+                        const joinId = listenerResult.user.id;
+                        createVideoBox(joinId);
+
+                        break;
+                    }
+                    case presenceEventType.leave: {
+                        const leaveId = listenerResult.user;
+                        removeVideoBox(leaveId);
+
+                        break;
+                    }
+                    case presenceEventType.publish: {
+                        const feeds = listenerResult.feeds;
+
+                        for (const feed of feeds) {
+                            const mediaType = feed.type;
+
+                            if (mediaType === sendVideoType) {
+                                const stream = await subscribeVideo(feed.id, sendVideoType);
+
+                                if (stream.active === true) {
+                                    document.getElementById(`multiVideo-${feed.id}`).srcObject = stream;
+                                }
+                            }
+
+                            if (mediaType === sendScreenShareType) {
+                                const targetId = feed.id;
+                                const stream = await subscribeVideo(targetId, sendScreenShareType);
+
+                                if (stream.active === true) {
+                                    document.getElementById(`multiVideo-${targetId}`).srcObject = stream;
+                                }
+                            }
+                        }
+
+                        break;
+                    }
+                }
+            } catch (err) {
+                console.log(err);
+                return alert(err);
+            }
+        }
+
+        // 에러 핸들러
+        function errorHandler(cause) {
+            throw new Error(cause);
+        }
+
+        sendButton.addEventListener("click", sendMessage); 
+        createVideoRoomBtn.addEventListener("click", createVideoRoom);
+        joinRoomBtn.addEventListener("click", joinRoom);
+        leaveRoomBtn.addEventListener("click", leaveRoom);
+        destroyRoomBtn.addEventListener("click", destroyRoom);
+        screenShareStartBtn.addEventListener("click", screenShareStart);
+        screenShareStopBtn.addEventListener("click", screenShareStop);
+        knowledgetalk.addEventListener("presence", presence);
+    </script>
+</body>
+</html>
