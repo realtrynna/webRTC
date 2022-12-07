@@ -5,9 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-    <link rel="stylesheet" href="https://unpkg.com/mvp.css">
+
     <title>p2p sample</title>
     <style>
+        .toggleSwitch.active {
+  background: #f03d3d;
+}
+
+.toggleSwitch.active .toggleButton {
+  left: calc(100% - 44px);
+  background: #fff;
+}
+        .toggleSwitch {
+  width: 100px;
+  height: 50px;
+  display: block;
+  position: relative;
+  border-radius: 30px;
+  background-color: #fff;
+  box-shadow: 0 0 16px 3px rgba(0 0 0 / 15%);
+  cursor: pointer;
+}
+
+ /* 토글 버튼 */
+.toggleSwitch .toggleButton {
+  /* 버튼은 토글보다 작아야함  */
+  width: 40px;
+  height: 40px;
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: #f03d3d;
+}
         #roomIdInput {
             padding: 10px; width: 200px; margin: 5px;
             border: 2px darkslategray solid;
@@ -19,6 +50,14 @@
     </style>
 </head>
 <body>
+    <input type="checkbox" id="toggle" hidden> 
+
+    <label for="toggle" class="toggleSwitch">
+    <span class="toggleButton"></span>
+    </label>
+
+    <br>
+
     <div>
         <button class="screenShareStart">화면 공유 시작</button>
         <button class="screenShareStop">화면 공유 중지</button>
@@ -27,8 +66,9 @@
     <h3 class="currentTargetId"></h3>
     <div>
         <input type="text" name="roomIdInput" id="roomIdInput" placeholder="room id"/>
-        <button id="createRoomBtn" disabled>CreateRoom</button>
-        <button id="joinRoomBtn" disabled>JoinRoom</button>
+        <button id="createRoomBtn">생성</button>
+        <button id="joinRoomBtn">입장</button>
+        <button id="leaveRoomBtn">퇴장</button>
         <div class="targetId"></div>
 
         <div class="wrapper">
@@ -48,6 +88,7 @@
 
     <script type="text/javascript" src="https://dev.knowledgetalk.co.kr:7102/knowledgetalk.min.js"></script>
     <script>
+        const toggle = document.querySelector(".toggleSwitch");
         const currentUserId = document.querySelector(".currentUserId");
         const currentTargetId = document.querySelector(".currentTargetId");
         const screenShareStartBtn = document.querySelector(".screenShareStart");
@@ -57,6 +98,7 @@
         const chatInput = document.querySelector('.chatting-input');
         const createRoomBtn = document.getElementById('createRoomBtn');
         const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const leaveRoomBtn = document.querySelector("#leaveRoomBtn");
         const roomIdInput = document.getElementById('roomIdInput');
         const p2pBtn = document.getElementById('p2pBtn');
         const videoBox = document.getElementById('videoBox');
@@ -68,94 +110,179 @@
 
         let responseSuccessCode = "200";
         let responseSuccessLength = 8;
+        
+        let toggleFlag = true;
 
+        const streamResponseStatus = true;
         const sendVideoType = "cam";
         const presenceEventType = {
             join: "join",
             leave: "leave",
-            publish: "publish",
             chat: "chat",
-            screen: "screen",
             shareStop: "shareStop",
             subscribed: "subscribed",
         };
-        const mediaConfig = {
-            video: true,
+        const userMediaConfig = {
+            video: {
+                width: 300,
+                height: 300,
+            },
             audio: false,
         };
+        const userDisplayMediaConfig = {
+            video: {
+                cursor: "always",
+            },
+            audio: false,
+        }
     
         let userId = null;
         let targetId = null;
         let roomId = null;
         let members = {};
 
-        // IIFE Initialize
+        // 초기화
         (async function init() {
             try {
-                const initResult = await knowledgetalk.init(cpCode, authKey);
-                const initResultCode = initResult.code;
-                const initResultUserId = initResult.userId;
+                const { code: initResultCode, userId:  initResultUserId } = await knowledgetalk.init(cpCode, authKey);
 
-                if (initResultCode !== responseSuccessCode || initResultUserId.length < 8) errorHandler("초기화 실패");
+                if (initResultCode !== responseSuccessCode || initResultUserId.length < responseSuccessLength) errorHandler("개발 키트를 초기화하는데 실패하였습니다.");
 
                 userId = initResultUserId;
 
-                createRoomBtn.disabled = false;
-                joinRoomBtn.disabled = false;
+                // 내 비디오
+                const localStream = await navigator.mediaDevices.getUserMedia(userMediaConfig);
+                createVideoBox(userId);
+                tagSelector(userId, localStream);
             } catch (err) {
                 console.log(err);
                 return alert(err);
             }
         })();
 
-        // 방 생성
+        // 생성
         async function createRoom() {
             try {
-                const createRoomResult = await knowledgetalk.createRoom();
-                const createRoomResultCode = createRoomResult.code;
-                const createRoomResultLength = createRoomResult.roomId;
+                const { code: createRoomResultCode, roomId: createRoomResultRoomId} = await knowledgetalk.createRoom();
                 
-                if (createRoomResultCode !== responseSuccessCode || createRoomResultLength < responseSuccessLength) errorHandler("초기화 실패");
+                if (createRoomResultCode !== responseSuccessCode || createRoomResultRoomId.length < responseSuccessLength) errorHandler("방 생성에 실패하였습니다.");
 
-                roomId = createRoomResult.roomId;
-
+                roomId = createRoomResultRoomId;
                 roomIdInput.value = roomId;
-                createRoomBtn.disabled = true;
             } catch (err) {
                 console.log(err);
                 return alert(err);
             }
         }
         
-        // 방 입장
+        // 입장
         async function joinRoom() {
+            roomId = roomIdInput.value;
+
             try {   
-                const roomId = roomIdInput.value;
                 const joinRoomResult = await knowledgetalk.joinRoom(roomId);
                 
                 currentUserId.textContent = `내 아이디 ${userId}`;
                 members = joinRoomResult.members;
-                
-                // 내 비디오
-                createVideoBox(userId);
-                const localStream = await navigator.mediaDevices.getUserMedia(mediaConfig);
-                document.getElementById(`multiVideo-${userId}`).srcObject = localStream;
-
-                console.log(userId);
-                console.log("로컬 스트림");
-                console.log(localStream);
 
                 for (const member of Object.keys(members)) {
                     if (member !== userId) {
                         currentTargetId.textContent = `너 아이디 ${member}`;
-                    
                         targetId = member;
+
+                        // 영상 전송
+                        const localStream = document.getElementById(`multiVideo-${userId}`).srcObject;
+                        const localStreamPublish = await knowledgetalk.publishP2P(member, sendVideoType, localStream);
+
+                        if (localStreamPublish !== streamResponseStatus) errorHandler("영상 전송에 실패하였습니다.");
                     }
                 }
             } catch (err) {
                 console.log(err);
                 return alert(err);
             }
+        }
+
+        // 퇴장
+        async function leaveRoom() {
+            try {
+                const { code: leaveRoomResult } = await knowledgetalk.leaveRoom(roomId);
+
+                if (leaveRoomResult !== responseSuccessCode) errorHandler("방 퇴장에 실패하였습니다.");
+
+                window.location.href = "./P2P.html";
+            } catch (err) {
+                console.log(err);
+                return alert(err);
+            }
+        }
+
+        // 메세지 전송
+        async function sendMessage() {
+            try {
+                const message = chatInput.value;
+
+                createMessageTag("나", message);
+
+                const { code: sendMessageResult } = await knowledgetalk.chat(message, roomId, targetId);
+
+                if (sendMessageResult !== responseSuccessCode) errorHandler("메세지 전송 실패");
+            } catch (err) {
+                console.log(err);
+                return alert(err);
+            }
+        }
+
+        // 메세지 태그 생성
+        function createMessageTag(id, message) {
+            const li = document.createElement("li");
+            li.innerText = `${id} ${message}`;
+            chatList.appendChild(li);
+        }
+    
+        // 화면 공유 시작
+        async function screenShareStart() {
+            try {
+                const localShareStream = await navigator.mediaDevices.getDisplayMedia(userDisplayMediaConfig);      
+                document.getElementById(`multiVideo-${userId}`).srcObject = localShareStream;
+
+                // 스트림 트랙 추출
+                localShareStream.getVideoTracks().forEach(track => {
+                    track.onended = () => {
+                        screenShareStop();
+                    };
+                });
+
+                const { code: shareStreamPublish } = await knowledgetalk.screenStart(localShareStream, targetId);
+
+                if (shareStreamPublish !== responseSuccessCode) errorHandler("화면 공유에 실패하였습니다.");
+            } catch (err) {
+                console.error(err);
+                return alert(err);
+            } 
+        }
+
+        // 화면 공유 중지
+        async function screenShareStop() {
+            try {
+                await knowledgetalk.shareStop();
+
+                const localStream = await navigator.mediaDevices.getUserMedia(userMediaConfig);
+
+                tagSelector(userId, localStream);
+
+                const localStreamPublish = await knowledgetalk.publishP2P(targetId, sendVideoType, localStream);
+
+                if (localStreamPublish !== streamResponseStatus) errorHandler("영상 전송에 실패하였습니다.");
+            } catch (err) { 
+                console.log(err);
+                return alert(err);
+            }
+        }
+
+        // 태그 선택
+        function tagSelector(id, stream) {
+            document.getElementById(`multiVideo-${id}`).srcObject = stream;
         }
 
         // 비디오 박스 생성
@@ -185,22 +312,80 @@
             videoBox.removeChild(child);
         }
 
-        // 메세지 전송
-        async function sendMessage() {
-            try {
-                const message = chatInput.value;
+        // 리스너
+        async function presenceListener(e) {
+            const { type } = e.detail;
 
-                const li = document.createElement("li");
-                li.innerText = `나: ${message}`;
-                chatList.appendChild(li);
+            switch (type) {
+                // 입장
+                case presenceEventType.join: {
+                    const { user: { id: targetIdJoin } } = e.detail;
 
-                const sendMessage = await knowledgetalk.chat(message, roomId, targetId);
-                const sendMessageResult = sendMessage.code;
+                    currentTargetId.textContent = `너 아이디 ${targetIdJoin}`;
+                    
+                    try {
+                        targetId = targetIdJoin;
 
-                if (sendMessageResult !== responseSuccessCode) return errorHandler("메세지 전송 실패");
-            } catch (err) {
-                console.log(err);
-                return alert(err);
+                        // 전송
+                        const localStream = document.getElementById(`multiVideo-${userId}`).srcObject;
+                        const localStreamPublish = await knowledgetalk.publishP2P(targetIdJoin, sendVideoType, localStream);
+
+                        if (localStreamPublish !== streamResponseStatus) errorHandler("영상 전송에 실패하였습니다.");
+                    } catch (err) {
+                        console.log(err);
+                        return alert(err);
+                    }
+
+                    break;
+                }
+                // 퇴장 
+                case presenceEventType.leave: {
+                    alert("상대방이 퇴장하여 대화를 종료합니다.");
+
+                    window.location.href = "./P2P.html";
+                }
+                // 채팅
+                case presenceEventType.chat: {
+                    const { message, user: targetId } = e.detail;
+
+                    createMessageTag(targetId, message);
+
+                    break;
+                }
+                // 수신
+                case presenceEventType.subscribed: {
+                    const { user: targetId, cam: subCondition } = e.detail;
+
+                    // 화면 공유
+                    if (subCondition === false) {
+                        const targetStream = knowledgetalk.getAllStreams().screen;
+
+                        return tagSelector(targetId, targetStream);
+                    }
+
+                    // 영상 공유
+                    const targetStream = knowledgetalk.getStream(targetId);
+
+                    createVideoBox(targetId);
+                    tagSelector(targetId, targetStream);
+
+                    break;
+                }      
+                // 공유 중지
+                case presenceEventType.shareStop: {
+                    const { user: shareTargetId } = e.detail;
+
+                    targetId = shareTargetId;
+
+                    // 상대방 스트림
+                    const targetStream = knowledgetalk.getStream(shareTargetId);
+                    
+                    tagSelector(shareTargetId, targetStream);
+
+                    removeVideoBox(shareTargetId);
+
+                    break;
+                }
             }
         }
 
@@ -208,138 +393,23 @@
         function errorHandler(cause) {
             throw new Error(cause);
         }
-    
-        // 화면 공유 시작
-        async function screenShareStart() {
-            try {
-                const screenShareStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        cursor: "always",
-                    },
-                    audio: false,
-                });
-
-                console.log(screenShareStream);                
-
-                document.getElementById(`multiVideo-${userId}`).srcObject = screenShareStream;
-
-                // 스트림 비디오 트랙 정보 추출(onended)
-                screenShareStream.getVideoTracks().forEach(track => {
-                    // console.log(track);
-                    track.onended = () => {
-                        screenShareStop();
-                    };
-                });
-
-                // 송출, 미디어 서버로 영상 송신
-                const screenShareStart = await knowledgetalk.screenStart(screenShareStream, targetId);
-                const screenShareStartResult = screenShareStart.code;
-                
-                if (screenShareStartResult !== responseSuccessCode) errorHandler("화면 공유 시작 실패");
-            } catch (err) {
-                console.error(err);
-                return alert(err);
-            } 
-        }
-
-        // 화면 공유 중지
-        async function screenShareStop() {
-            try {
-                await knowledgetalk.shareStop();
-
-                const screenShareStream = await navigator.mediaDevices.getUserMedia(mediaConfig);
-                const screenShareStreamResult = screenShareStream.active;
-
-                if (!screenShareStreamResult) errorHandler("화면 공유 중지 실패");
-
-                document.getElementById(`multiVideo-${userId}`).srcObject = screenShareStream;
-            } catch (err) { 
-                console.log(err);
-                return alert(err);
-            }
-        }
-
-        // 리스너
-        async function presenceListener(e) {
-            const listenerResult = e.detail;
-            const { type, user: { id } } = listenerResult;
-
-            switch (type) {
-                // 입장
-                case presenceEventType.join: {
-                    currentTargetId.textContent = `너 아이디 ${id}`;
-
-                    const localStream = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
-                    const localStreamPublish = await knowledgetalk.publishP2P(id, sendVideoType, localStream);
-
-                    console.log(localStream);
-
-                    if (!localStreamPublish) errorHandler("영상 송출 실패");
-
-                    createVideoBox(id);
-                    document.getElementById(`multiVideo-${id}`).srcObject = localStream;
-
-                    targetId = id;
-
-                    break;
-                }
-                
-                // 채팅
-                case presenceEventType.chat: {
-                    const message = listenerResult.message;
-                    const messageSendTargetId = listenerResult.user;
-
-                    if (type === presenceEventType.chat) {
-                        const li = document.createElement("li");
-                        li.innerText = `${messageSendTargetId}: ${message}`;
-                        chatList.appendChild(li);
-                    }
-
-                    break;
-                }
-                
-                // 수신
-                case presenceEventType.subscribed: {
-                    const targetId = listenerResult.user;
-
-                    // 화면 공유
-                    if (!listenerResult.cam) {
-                        // 모든 스트림
-                        const getAllStreams = knowledgetalk.getAllStreams();
-                        const getStream = knowledgetalk.getStream(targetId);
-
-                        console.log(targetId);
-                        console.log(getAllStreams);
-                        console.log(getStream);
-
-                        // return document.getElementById(`multiVideo-${listenerResult.user}`).srcObject = getAllStreams;
-                    }
-
-                    const targetStream = knowledgetalk.getStream(targetId);
-
-                    createVideoBox(targetId);
-
-                    document.getElementById(`multiVideo-${targetId}`).srcObject = targetStream;
-                }
-                
-                // 공유 중지
-                case presenceEventType.shareStop: {
-                    if (type === presenceEventType.shareStop) {
-                        const screenShareStopTargetId = listenerResult.user;
-
-                        const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
-                        document.getElementById(`multiVideo-${screenShareStopTargetId}`).srcObject = stream;
-                    }
-                }
-            }
-        }
 
         screenShareStartBtn.addEventListener("click", screenShareStart);
         screenShareStopBtn.addEventListener("click", screenShareStop);
         sendBtn.addEventListener("click", sendMessage);
         createRoomBtn.addEventListener("click", createRoom);
         joinRoomBtn.addEventListener("click", joinRoom);
+        leaveRoomBtn.addEventListener("click", leaveRoom);
         knowledgetalk.addEventListener("presence", presenceListener);
+        toggle.onclick = (e) => {
+            toggle.classList.toggle('active');
+            if (toggleFlag) {
+                toggleFlag = false;
+                return document.querySelector(`#multiVideo-${userId}`).srcObject.getVideoTracks()[0].enabled = false;
+            }
+            toggleFlag = true;
+            document.querySelector(`#multiVideo-${userId}`).srcObject.getVideoTracks()[0].enabled = true;
+        }
     </script>
 </body>
 </html>

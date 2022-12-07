@@ -349,15 +349,16 @@
                     case presenceEventType.publish: {
                         const feeds = listenerResult.feeds;
 
+                        // active 먼저 분기
                         for (const feed of feeds) {
                             const mediaType = feed.type;
 
                             if (mediaType === sendVideoType) {
                                 const stream = await subscribeVideo(feed.id, sendVideoType);
 
-                                if (stream.active === true) {
-                                    document.getElementById(`multiVideo-${feed.id}`).srcObject = stream;
-                                }
+                                // if (stream.active === true) {
+                                //     document.getElementById(`multiVideo-${feed.id}`).srcObject = stream;
+                                // }
                             }
 
                             if (mediaType === sendScreenShareType) {
